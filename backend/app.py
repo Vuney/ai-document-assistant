@@ -6,6 +6,7 @@ import PyPDF2
 import docx
 import io
 import time
+import re
 
 # Import library untuk Summarizer
 from sumy.parsers.plaintext import PlaintextParser
@@ -19,25 +20,48 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 
 # =========================================================
-# MEMUAT MODEL AI PARAFRASER (PEGASUS) - LOAD SEKALI SAJA
+# MEMUAT MODEL AI PARAFRASER (ENGLISH - PEGASUS)
 # =========================================================
-print("Memuat model AI Paraphraser (Pegasus)...")
-MODEL_NAME = 'tuner007/pegasus_paraphrase'
+print("Memuat model AI Paraphraser (English - Pegasus)...")
+EN_MODEL_NAME = 'tuner007/pegasus_paraphrase'
 
 try:
-    paraphrase_tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    paraphrase_model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
-    print("Model AI Paraphraser berhasil dimuat.")
+    paraphrase_tokenizer_en = AutoTokenizer.from_pretrained(EN_MODEL_NAME)
+    paraphrase_model_en = AutoModelForSeq2SeqLM.from_pretrained(EN_MODEL_NAME)
+    print("Model English Paraphraser berhasil dimuat.")
 except Exception as e:
-    print(f"Gagal memuat model. Error: {e}")
-    paraphrase_tokenizer = None
-    paraphrase_model = None
+    print(f"Gagal memuat model English. Error: {e}")
+    paraphrase_tokenizer_en = None
+    paraphrase_model_en = None
+
+# =========================================================
+# MEMUAT MODEL AI PARAFRASER (INDONESIA)
+# =========================================================
+print("Memuat model AI Paraphraser (Indonesia)...")
+ID_MODEL_NAME = "cahya/t5-base-indonesian-paraphrase"
+
+try:
+    paraphrase_tokenizer_id = AutoTokenizer.from_pretrained(ID_MODEL_NAME)
+    paraphrase_model_id = AutoModelForSeq2SeqLM.from_pretrained(ID_MODEL_NAME)
+    print("Model Indonesia Paraphraser berhasil dimuat.")
+except Exception as e:
+    print(f"Gagal memuat model Indonesia. Error: {e}")
+    paraphrase_tokenizer_id = None
+    paraphrase_model_id = None
 
 # =========================================================
 # FLASK APP
 # =========================================================
 app = Flask(__name__)
 CORS(app)
+
+# =========================================================
+# DETEKSI BAHASA SEDERHANA
+# =========================================================
+def detect_language(text: str) -> str:
+    # Jika mengandung banyak karakter non-ascii → Indonesia
+    non_ascii = sum(1 for c in text if ord(c) > 127)
+    return "id" if non_ascii > 5 else "en"
 
 # =========================================================
 # FUNGSI EKSTRAKSI TEKS DARI FILE
@@ -80,33 +104,34 @@ def summarize_text(text, language="english", sentences_count=5):
     return summary
 
 # =========================================================
-# FUNGSI PARAPHRASER (PEGASUS)
+# FUNGSI PARAPHRASER (AUTO EN / ID)
 # =========================================================
-def paraphrase_text(text, num_return_sequences=1):
-    if not paraphrase_model or not paraphrase_tokenizer:
-        raise ValueError("Model parafrasa tidak berhasil dimuat.")
+def paraphrase_text(text):
+    lang = detect_language(text)
 
-    input_ids = paraphrase_tokenizer.encode(
-        text,
-        return_tensors='pt',
-        max_length=1000,
-        truncation=True
-    )
+    if lang == "id":
+        if not paraphrase_model_id:
+            raise ValueError("Model parafrasa Bahasa Indonesia tidak tersedia.")
 
-    outputs = paraphrase_model.generate(
-        input_ids,
-        max_length=1000,
-        num_beams=5,
-        num_return_sequences=num_return_sequences,
-        early_stopping=True
-    )
+        input_ids = paraphrase_tokenizer_id.encode(
+            text, return_tensors="pt", truncation=True, max_length=512
+        )
+        outputs = paraphrase_model_id.generate(
+            input_ids, max_length=512, num_beams=5, early_stopping=True
+        )
+        return paraphrase_tokenizer_id.decode(outputs[0], skip_special_tokens=True)
 
-    paraphrased_text = paraphrase_tokenizer.decode(
-        outputs[0],
-        skip_special_tokens=True
-    )
+    else:
+        if not paraphrase_model_en:
+            raise ValueError("Model parafrasa English tidak tersedia.")
 
-    return paraphrased_text
+        input_ids = paraphrase_tokenizer_en.encode(
+            text, return_tensors='pt', truncation=True, max_length=1000
+        )
+        outputs = paraphrase_model_en.generate(
+            input_ids, max_length=1000, num_beams=5, early_stopping=True
+        )
+        return paraphrase_tokenizer_en.decode(outputs[0], skip_special_tokens=True)
 
 # =========================================================
 # API ENDPOINT: SUMMARIZER
@@ -115,10 +140,8 @@ def paraphrase_text(text, num_return_sequences=1):
 def handle_summarize():
     sentences_count = int(request.form.get('sentences_count', 5))
 
-    # Ambil teks dari textarea ATAU dari file upload
     if 'text' in request.form and request.form.get('text', '').strip():
         full_text = request.form.get('text')
-
     elif 'file' in request.files:
         file = request.files['file']
         if file.filename == '':
@@ -127,16 +150,11 @@ def handle_summarize():
             full_text = extract_text_from_file(file)
         except Exception as e:
             return jsonify({"error": f"Gagal membaca file: {str(e)}"}), 500
-
     else:
         return jsonify({"error": "Tidak ada input file atau teks yang diberikan"}), 400
 
-    # =====================================================
-    # BATAS PANJANG TEKS UNTUK SUMMARIZER (2000 KATA)
-    # =====================================================
     MAX_WORDS = 2000
     word_count = len(full_text.split())
-
     if word_count > MAX_WORDS:
         return jsonify({
             "error": f"Teks terlalu panjang (maksimal {MAX_WORDS} kata). Saat ini {word_count} kata."
@@ -149,7 +167,6 @@ def handle_summarize():
             sentences_count=sentences_count
         )
         return jsonify({"summary": summary_result})
-
     except Exception as e:
         return jsonify({"error": f"Gagal memproses: {str(e)}"}), 500
 
@@ -165,19 +182,17 @@ def handle_paraphrase():
 
     original_text = data.get('text')
 
-    # BATAS PANJANG TEKS (WAJIB UNTUK PEGASUS)
     if len(original_text) > 1000:
-        return jsonify({"error": "Teks terlalu panjang untuk parafrasa (maks 1000 karakter)"}), 400
+        return jsonify({"error": "Teks terlalu panjang (maks 1000 karakter)"}), 400
 
     try:
-        paraphrased_result = paraphrase_text(original_text)
-        return jsonify({"paraphrased_text": paraphrased_result})
-
+        result = paraphrase_text(original_text)
+        return jsonify({"paraphrased_text": result})
     except Exception as e:
         return jsonify({"error": f"Gagal memproses: {str(e)}"}), 500
 
 # =========================================================
-# ENTRY POINT (UNTUK DEPLOY)
+# ENTRY POINT
 # =========================================================
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
