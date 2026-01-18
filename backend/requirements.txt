@@ -1,5 +1,8 @@
 flask
 flask-cors
+transformers
+torch==2.1.0+cpu
+sentencepiece
 PyPDF2
 python-docx
 sumy
