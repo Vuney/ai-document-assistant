@@ -1,8 +1,7 @@
-// frontend/app/page.tsx
-
 "use client";
 
 import { useState, ChangeEvent, FormEvent } from 'react';
+import { Client } from "@gradio/client"; // Pastikan sudah install: npm install @gradio/client
 
 // Tipe data untuk fitur yang aktif
 type Feature = 'summarizer' | 'paraphraser';
@@ -54,7 +53,7 @@ export default function Home() {
     }
   };
 
-  // Handler saat form disubmit
+ // Handler saat form disubmit
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
@@ -62,55 +61,50 @@ export default function Home() {
     setCopySuccess('');
 
     try {
-      // --- PENAMBAHAN LOGIKA URL CLOUD ---
-      const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; // Mengambil LudgerChelysie/AI-DOCUMENT-ASSISTANT
+      const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
       if (!hfSpace) throw new Error("Konfigurasi backend (Environment Variable) belum dipasang di Vercel.");
-      
-      // Mengubah format "Username/SpaceName" menjadi "Username-SpaceName" untuk URL Hugging Face
-      const baseUrl = `https://${hfSpace.replace('/', '-')}.hf.space`;
+
+      // Inisialisasi Gradio Client
+      const client = await Client.connect(hfSpace);
 
       // Logika untuk fitur Summarizer
       if (activeFeature === 'summarizer') {
-        const formData = new FormData();
-        formData.append('sentences_count', summaryLength);
+        const textInput = summarizerMode === 'text' ? originalText : "";
+        const fileInput = summarizerMode === 'file' ? file : null;
 
-        if (summarizerMode === 'file') {
-          if (!file) throw new Error("Silakan unggah file terlebih dahulu.");
-          formData.append('file', file);
-        } else {
-          if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diringkas.");
-          formData.append('text', originalText);
+        if (summarizerMode === 'file' && !file) throw new Error("Silakan unggah file terlebih dahulu.");
+        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diringkas.");
+
+        // Memanggil fungsi summarize di app.py
+        const result = await client.predict("/summarize", { 
+          input_text: textInput, 
+          file_obj: fileInput, 
+          sentences: Number(summaryLength), 
+        }) as { data: any[] }; // Casting tipe data agar TypeScript tidak error
+
+        // Mengambil elemen pertama dari array data
+        if (result.data && result.data.length > 0) {
+          setSummary(String(result.data[0]));
         }
-
-        // UBAH BARIS INI: Menggunakan baseUrl bukannya localhost
-        const response = await fetch(`${baseUrl}/api/summarize`, {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (!response.ok) throw new Error((await response.json()).error || 'Gagal meringkas.');
-        const data = await response.json();
-        setSummary(data.summary);
         setParaphrasedText("");
 
       // Logika untuk fitur Paraphraser
       } else if (activeFeature === 'paraphraser') {
           if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diparafrasakan.");
           
-          // UBAH BARIS INI JUGA: Menggunakan baseUrl
-          const response = await fetch(`${baseUrl}/api/paraphrase`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: originalText }),
-          });
-          
-          if (!response.ok) throw new Error((await response.json()).error || 'Gagal memparafrasakan.');
-          const data = await response.json();
-          setParaphrasedText(data.paraphrased_text);
+          // Memanggil fungsi paraphrase di app.py
+          const result = await client.predict("/paraphrase", { 
+            input_text: originalText, 
+            file_obj: null, 
+          }) as { data: any[] }; // Casting tipe data
+
+          if (result.data && result.data.length > 0) {
+            setParaphrasedText(String(result.data[0]));
+          }
           setSummary("");
       }
     } catch (err: any) {
-      // Pesan error lebih informatif
+      console.error("Connection Error:", err);
       setError(err.message || "Terjadi kesalahan koneksi ke server AI.");
       setSummary("");
       setParaphrasedText("");
