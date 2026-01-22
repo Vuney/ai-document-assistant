@@ -1,9 +1,15 @@
+import os
 import nltk
 import random
 import gradio as gr
 from nltk.corpus import wordnet
 from nltk.tokenize import word_tokenize
 
+# Library untuk dokumen
+from PyPDF2 import PdfReader
+from docx import Document
+
+# Library untuk summarizer
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
@@ -11,26 +17,68 @@ from sumy.nlp.stemmers import Stemmer
 from sumy.utils import get_stop_words
 
 # =====================
-# NLTK setup
+# NLTK Setup (Fix for Hugging Face)
 # =====================
-nltk.download("punkt")
-nltk.download("wordnet")
+nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
+os.makedirs(nltk_data_path, exist_ok=True)
+nltk.data.path.append(nltk_data_path)
+
+def download_nltk_data():
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download("punkt", download_dir=nltk_data_path)
+        nltk.download("wordnet", download_dir=nltk_data_path)
+        nltk.download("omw-1.4", download_dir=nltk_data_path)
+
+download_nltk_data()
 
 # =====================
-# Summarizer
+# Document Processing
 # =====================
-def summarize_text(text, sentences):
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    stemmer = Stemmer("english")
-    summarizer = LsaSummarizer(stemmer)
-    summarizer.stop_words = get_stop_words("english")
+def extract_text(file_obj):
+    if file_obj is None:
+        return ""
+    
+    file_path = file_obj.name
+    text = ""
+    
+    if file_path.endswith('.pdf'):
+        reader = PdfReader(file_path)
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+    elif file_path.endswith('.docx'):
+        doc = Document(file_path)
+        for para in doc.paragraphs:
+            text += para.text + "\n"
+    else:
+        # Jika file teks biasa atau lainnya
+        with open(file_path, "r", encoding="utf-8") as f:
+            text = f.read()
+            
+    return text.strip()
 
-    summary = summarizer(parser.document, int(sentences))
-    return " ".join(str(s) for s in summary)
+# =====================
+# AI Logic Functions
+# =====================
+def summarize_process(input_text, file_obj, sentences):
+    # Gabungkan teks input manual dan teks dari file
+    text = input_text if input_text.strip() else extract_text(file_obj)
+    
+    if not text:
+        return "Mohon masukkan teks atau unggah file dokumen."
 
-# =====================
-# Paraphraser
-# =====================
+    try:
+        parser = PlaintextParser.from_string(text, Tokenizer("english"))
+        stemmer = Stemmer("english")
+        summarizer = LsaSummarizer(stemmer)
+        summarizer.stop_words = get_stop_words("english")
+
+        summary = summarizer(parser.document, int(sentences))
+        return " ".join(str(s) for s in summary)
+    except Exception as e:
+        return f"Error saat meringkas: {str(e)}"
+
 def get_synonyms(word):
     synonyms = set()
     for syn in wordnet.synsets(word):
@@ -40,7 +88,12 @@ def get_synonyms(word):
                 synonyms.add(name)
     return list(synonyms)
 
-def paraphrase_text(text):
+def paraphrase_process(input_text, file_obj):
+    text = input_text if input_text.strip() else extract_text(file_obj)
+    
+    if not text:
+        return "Mohon masukkan teks atau unggah file dokumen."
+
     words = word_tokenize(text)
     new_words = []
 
@@ -56,30 +109,44 @@ def paraphrase_text(text):
 # =====================
 # Gradio UI
 # =====================
-with gr.Blocks(title="AI Document Assistant") as demo:
+with gr.Blocks(title="AI Document Assistant", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🧠 AI Document Assistant")
-    gr.Markdown("Meringkas dan memparafrasakan teks dengan cerdas.")
+    gr.Markdown("Tool profesional untuk Meringkas (Summarize) dan Memparafrase dokumen PDF/Docx.")
 
     with gr.Tab("Summarizer"):
-        input_text = gr.Textbox(lines=8, label="Masukkan teks")
-        sentence_count = gr.Slider(3, 20, value=5, step=1, label="Jumlah Kalimat")
-        output_summary = gr.Textbox(lines=6, label="Hasil Ringkasan")
-        gr.Button("Ringkas").click(
-            summarize_text,
-            inputs=[input_text, sentence_count],
-            outputs=output_summary
+        with gr.Row():
+            with gr.Column():
+                input_text = gr.Textbox(lines=8, label="Input Teks Manual")
+                input_file = gr.File(label="Atau Unggah PDF/Docx", file_types=[".pdf", ".docx"])
+                sentence_count = gr.Slider(3, 20, value=5, step=1, label="Jumlah Kalimat Ringkasan")
+                btn_sum = gr.Button("🚀 Jalankan Ringkasan", variant="primary")
+            with gr.Column():
+                output_summary = gr.Textbox(lines=15, label="Hasil Ringkasan")
+        
+        # Link API untuk Next.js
+        btn_sum.click(
+            summarize_process, 
+            inputs=[input_text, input_file, sentence_count], 
+            outputs=output_summary,
+            api_name="summarize"
         )
 
     with gr.Tab("Paraphraser"):
-        input_para = gr.Textbox(lines=8, label="Teks Asli")
-        output_para = gr.Textbox(lines=8, label="Hasil Parafrasa")
-        gr.Button("Parafrase").click(
-            paraphrase_text,
-            inputs=input_para,
-            outputs=output_para
+        with gr.Row():
+            with gr.Column():
+                input_para_text = gr.Textbox(lines=8, label="Input Teks Manual")
+                input_para_file = gr.File(label="Atau Unggah PDF/Docx", file_types=[".pdf", ".docx"])
+                btn_para = gr.Button("🔄 Jalankan Parafrase", variant="primary")
+            with gr.Column():
+                output_para = gr.Textbox(lines=15, label="Hasil Parafrasa")
+        
+        # Link API untuk Next.js
+        btn_para.click(
+            paraphrase_process, 
+            inputs=[input_para_text, input_para_file], 
+            outputs=output_para,
+            api_name="paraphrase"
         )
 
-demo.launch(
-    server_name="0.0.0.0",
-    server_port=7860
-)
+if __name__ == "__main__":
+    demo.launch(server_name="0.0.0.0", server_port=7860)

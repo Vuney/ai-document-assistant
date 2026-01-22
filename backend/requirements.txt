@@ -1,7 +1,6 @@
-flask
-flask-cors
+gradio
 nltk
 sumy
 PyPDF2
 python-docx
-gunicorn
+numpy
