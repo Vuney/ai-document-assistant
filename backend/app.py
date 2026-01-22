@@ -1,16 +1,8 @@
-# backend/app.py
-import io
-import random
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-
 import nltk
+import random
+import gradio as gr
 from nltk.corpus import wordnet
 from nltk.tokenize import word_tokenize
-
-import PyPDF2
-import docx
 
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
@@ -18,79 +10,27 @@ from sumy.summarizers.lsa import LsaSummarizer
 from sumy.nlp.stemmers import Stemmer
 from sumy.utils import get_stop_words
 
-# =========================
-# NLTK SAFE INIT (ONCE)
-# =========================
-def init_nltk():
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        nltk.download("punkt")
+# =====================
+# NLTK setup
+# =====================
+nltk.download("punkt")
+nltk.download("wordnet")
 
-    try:
-        nltk.data.find("corpora/wordnet")
-    except LookupError:
-        nltk.download("wordnet")
-
-init_nltk()
-
-# =========================
-# APP INIT
-# =========================
-app = Flask(__name__)
-CORS(app)
-
-# =========================
-# Health Check
-# =========================
-@app.route("/", methods=["GET"])
-def health():
-    return jsonify({
-        "status": "ok",
-        "message": "AI Document Assistant Backend Running"
-    })
-
-# =========================
-# Extract text from file
-# =========================
-def extract_text(file):
-    filename = file.filename.lower()
-    text = ""
-
-    if filename.endswith(".pdf"):
-        reader = PyPDF2.PdfReader(io.BytesIO(file.read()))
-        for page in reader.pages:
-            if page.extract_text():
-                text += page.extract_text()
-
-    elif filename.endswith(".docx"):
-        document = docx.Document(io.BytesIO(file.read()))
-        for p in document.paragraphs:
-            text += p.text + "\n"
-
-    else:
-        raise ValueError("File harus PDF atau DOCX")
-
-    if not text.strip():
-        raise ValueError("Teks kosong")
-
-    return text
-
-# =========================
-# Summarizer (SUMY LSA)
-# =========================
-def summarize_text(text, sentences=5):
+# =====================
+# Summarizer
+# =====================
+def summarize_text(text, sentences):
     parser = PlaintextParser.from_string(text, Tokenizer("english"))
     stemmer = Stemmer("english")
     summarizer = LsaSummarizer(stemmer)
     summarizer.stop_words = get_stop_words("english")
 
-    summary = summarizer(parser.document, sentences)
+    summary = summarizer(parser.document, int(sentences))
     return " ".join(str(s) for s in summary)
 
-# =========================
-# Paraphraser (WordNet)
-# =========================
+# =====================
+# Paraphraser
+# =====================
 def get_synonyms(word):
     synonyms = set()
     for syn in wordnet.synsets(word):
@@ -100,12 +40,12 @@ def get_synonyms(word):
                 synonyms.add(name)
     return list(synonyms)
 
-def paraphrase_text(text, replace_prob=0.3):
+def paraphrase_text(text):
     words = word_tokenize(text)
     new_words = []
 
     for word in words:
-        if word.isalpha() and random.random() < replace_prob:
+        if word.isalpha() and random.random() < 0.3:
             synonyms = get_synonyms(word)
             new_words.append(random.choice(synonyms) if synonyms else word)
         else:
@@ -113,58 +53,33 @@ def paraphrase_text(text, replace_prob=0.3):
 
     return " ".join(new_words)
 
-# =========================
-# API: Summarize
-# =========================
-@app.route("/api/summarize", methods=["POST"])
-def summarize():
-    try:
-        sentences = int(request.form.get("sentences", 5))
+# =====================
+# Gradio UI
+# =====================
+with gr.Blocks(title="AI Document Assistant") as demo:
+    gr.Markdown("# 🧠 AI Document Assistant")
+    gr.Markdown("Meringkas dan memparafrasakan teks dengan cerdas.")
 
-        if "text" in request.form and request.form["text"].strip():
-            text = request.form["text"]
+    with gr.Tab("Summarizer"):
+        input_text = gr.Textbox(lines=8, label="Masukkan teks")
+        sentence_count = gr.Slider(3, 20, value=5, step=1, label="Jumlah Kalimat")
+        output_summary = gr.Textbox(lines=6, label="Hasil Ringkasan")
+        gr.Button("Ringkas").click(
+            summarize_text,
+            inputs=[input_text, sentence_count],
+            outputs=output_summary
+        )
 
-        elif "file" in request.files:
-            text = extract_text(request.files["file"])
+    with gr.Tab("Paraphraser"):
+        input_para = gr.Textbox(lines=8, label="Teks Asli")
+        output_para = gr.Textbox(lines=8, label="Hasil Parafrasa")
+        gr.Button("Parafrase").click(
+            paraphrase_text,
+            inputs=input_para,
+            outputs=output_para
+        )
 
-        else:
-            return jsonify({"error": "Tidak ada teks atau file"}), 400
-
-        if len(text.split()) > 3000:
-            return jsonify({"error": "Teks terlalu panjang (maks 3000 kata)"}), 400
-
-        summary = summarize_text(text, sentences)
-        return jsonify({"summary": summary})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# =========================
-# API: Paraphrase
-# =========================
-@app.route("/api/paraphrase", methods=["POST"])
-def paraphrase():
-    try:
-        if "text" in request.form and request.form["text"].strip():
-            text = request.form["text"]
-
-        elif "file" in request.files:
-            text = extract_text(request.files["file"])
-
-        else:
-            return jsonify({"error": "Tidak ada teks atau file"}), 400
-
-        if len(text.split()) > 3000:
-            return jsonify({"error": "Teks terlalu panjang (maks 3000 kata)"}), 400
-
-        result = paraphrase_text(text)
-        return jsonify({"paraphrase": result})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# =========================
-# Run (LOCAL ONLY)
-# =========================
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+demo.launch(
+    server_name="0.0.0.0",
+    server_port=7860
+)
