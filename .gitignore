@@ -1,0 +1,18 @@
+# Python virtual environment
+backend/venv/
+backend/.venv/
+**/__pycache__/
+backend/*.pyc
+
+# Node.js dependencies
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Project specific
+uploads/
