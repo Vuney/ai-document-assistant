@@ -19,19 +19,11 @@ from sumy.utils import get_stop_words
 # =====================
 # NLTK Setup (Fix for Hugging Face)
 # =====================
-nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
-os.makedirs(nltk_data_path, exist_ok=True)
-nltk.data.path.append(nltk_data_path)
-
-def download_nltk_data():
-    try:
-        nltk.data.find('tokenizers/punkt')
-    except LookupError:
-        nltk.download("punkt", download_dir=nltk_data_path)
-        nltk.download("wordnet", download_dir=nltk_data_path)
-        nltk.download("omw-1.4", download_dir=nltk_data_path)
-
-download_nltk_data()
+# Langsung download ke direktori default agar sistem NLTK otomatis menemukannya
+nltk.download('punkt')
+nltk.download('punkt_tab')  # Ini yang paling penting untuk memperbaiki error di screenshot kamu
+nltk.download('wordnet')
+nltk.download('omw-1.4')
 
 # =====================
 # Document Processing
