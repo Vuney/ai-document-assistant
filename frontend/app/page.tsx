@@ -58,56 +58,60 @@ export default function Home() {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
-    // Clear only error and copy success, keep results until new ones arrive
     setError("");
     setCopySuccess('');
 
     try {
+      // --- PENAMBAHAN LOGIKA URL CLOUD ---
+      const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; // Mengambil LudgerChelysie/AI-DOCUMENT-ASSISTANT
+      if (!hfSpace) throw new Error("Konfigurasi backend (Environment Variable) belum dipasang di Vercel.");
+      
+      // Mengubah format "Username/SpaceName" menjadi "Username-SpaceName" untuk URL Hugging Face
+      const baseUrl = `https://${hfSpace.replace('/', '-')}.hf.space`;
+
       // Logika untuk fitur Summarizer
       if (activeFeature === 'summarizer') {
         const formData = new FormData();
         formData.append('sentences_count', summaryLength);
 
-        // Cek mode input dan validasi
         if (summarizerMode === 'file') {
-          if (!file) {
-            throw new Error("Silakan unggah file terlebih dahulu.");
-          }
+          if (!file) throw new Error("Silakan unggah file terlebih dahulu.");
           formData.append('file', file);
-        } else { // Mode 'text'
-          if (!originalText.trim()) {
-            throw new Error("Silakan masukkan teks yang ingin diringkas.");
-          }
+        } else {
+          if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diringkas.");
           formData.append('text', originalText);
         }
 
-        const response = await fetch('http://localhost:5000/api/summarize', {
+        // UBAH BARIS INI: Menggunakan baseUrl bukannya localhost
+        const response = await fetch(`${baseUrl}/api/summarize`, {
           method: 'POST',
           body: formData,
         });
+        
         if (!response.ok) throw new Error((await response.json()).error || 'Gagal meringkas.');
         const data = await response.json();
         setSummary(data.summary);
-        setParaphrasedText(""); // Clear paraphrased text if any
+        setParaphrasedText("");
 
       // Logika untuk fitur Paraphraser
       } else if (activeFeature === 'paraphraser') {
-         if (!originalText.trim()) {
-            throw new Error("Silakan masukkan teks yang ingin diparafrasakan.");
-          }
-          const response = await fetch('http://localhost:5000/api/paraphrase', {
+          if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diparafrasakan.");
+          
+          // UBAH BARIS INI JUGA: Menggunakan baseUrl
+          const response = await fetch(`${baseUrl}/api/paraphrase`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: originalText }),
           });
+          
           if (!response.ok) throw new Error((await response.json()).error || 'Gagal memparafrasakan.');
           const data = await response.json();
           setParaphrasedText(data.paraphrased_text);
-          setSummary(""); // Clear summary if any
+          setSummary("");
       }
     } catch (err: any) {
-      setError(err.message || "Terjadi kesalahan. Pastikan server backend berjalan.");
-      // Clear previous results on error
+      // Pesan error lebih informatif
+      setError(err.message || "Terjadi kesalahan koneksi ke server AI.");
       setSummary("");
       setParaphrasedText("");
     } finally {
