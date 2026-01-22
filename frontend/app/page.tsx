@@ -62,52 +62,47 @@ export default function Home() {
 
     try {
       const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
-      if (!hfSpace) throw new Error("Konfigurasi backend (Environment Variable) belum dipasang di Vercel.");
+      if (!hfSpace) throw new Error("Environment Variable belum dipasang di Vercel.");
 
-      // Inisialisasi Gradio Client
       const client = await Client.connect(hfSpace);
 
-      // Logika untuk fitur Summarizer
       if (activeFeature === 'summarizer') {
         const textInput = summarizerMode === 'text' ? originalText : "";
+        // Gradio seringkali membutuhkan file dalam bentuk Blob atau File object langsung
         const fileInput = summarizerMode === 'file' ? file : null;
 
-        if (summarizerMode === 'file' && !file) throw new Error("Silakan unggah file terlebih dahulu.");
-        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diringkas.");
+        if (summarizerMode === 'file' && !file) throw new Error("Silakan unggah file dahulu.");
+        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Teks kosong.");
 
-        // Memanggil fungsi summarize di app.py
-        const result = await client.predict("/summarize", { 
+        // Tambahkan casting 'as any' agar TypeScript tidak komplain soal .data
+        const result = (await client.predict("/summarize", { 
           input_text: textInput, 
           file_obj: fileInput, 
           sentences: Number(summaryLength), 
-        }) as { data: any[] }; // Casting tipe data agar TypeScript tidak error
+        })) as any;
 
-        // Mengambil elemen pertama dari array data
-        if (result.data && result.data.length > 0) {
+        if (result.data && result.data[0]) {
           setSummary(String(result.data[0]));
         }
         setParaphrasedText("");
 
-      // Logika untuk fitur Paraphraser
       } else if (activeFeature === 'paraphraser') {
-          if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diparafrasakan.");
-          
-          // Memanggil fungsi paraphrase di app.py
-          const result = await client.predict("/paraphrase", { 
-            input_text: originalText, 
-            file_obj: null, 
-          }) as { data: any[] }; // Casting tipe data
+        if (!originalText.trim()) throw new Error("Teks kosong.");
 
-          if (result.data && result.data.length > 0) {
-            setParaphrasedText(String(result.data[0]));
-          }
-          setSummary("");
+        const result = (await client.predict("/paraphrase", { 
+          input_text: originalText, 
+          file_obj: null, 
+        })) as any;
+
+        if (result.data && result.data[0]) {
+          setParaphrasedText(String(result.data[0]));
+        }
+        setSummary("");
       }
     } catch (err: any) {
       console.error("Connection Error:", err);
-      setError(err.message || "Terjadi kesalahan koneksi ke server AI.");
-      setSummary("");
-      setParaphrasedText("");
+      // Menampilkan pesan error dari backend jika ada
+      setError(err.message || "Gagal memproses dokumen.");
     } finally {
       setIsLoading(false);
     }
