@@ -60,41 +60,57 @@ export default function Home() {
     setError("");
     setCopySuccess('');
 
-    // Di dalam handleSubmit (page.tsx)
-try {
-  const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
-  if (!hfSpace) throw new Error("Konfigurasi backend belum dipasang di Vercel.");
-  
-  const client = await Client.connect(hfSpace);
+    try {
+      const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
+      if (!hfSpace) throw new Error("Konfigurasi backend (Environment Variable) belum dipasang di Vercel.");
+      
+      console.log("Menghubungkan ke Hugging Face...");
+      // Menghubungkan ke Gradio Client
+      const client = await Client.connect(hfSpace);
+      console.log("Koneksi berhasil, mengirim data...");
 
-  if (activeFeature === 'summarizer') {
-    // Pastikan mengirim file asli, bukan sekadar path string
-    const fileInput = summarizerMode === 'file' ? file : null;
-    const textInput = summarizerMode === 'text' ? originalText : "";
+      // Logika untuk fitur Summarizer
+      if (activeFeature === 'summarizer') {
+        const textInput = summarizerMode === 'text' ? originalText : "";
+        const fileInput = summarizerMode === 'file' ? file : null;
 
-    const result = (await client.predict("/summarize", { 
-      input_text: textInput, 
-      file_obj: fileInput, 
-      sentences: Number(summaryLength), 
-    })) as any;
+        if (summarizerMode === 'file' && !file) throw new Error("Silakan unggah file terlebih dahulu.");
+        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diringkas.");
 
-    if (result.data && result.data[0]) {
-      setSummary(String(result.data[0]));
+        const result = (await client.predict("/summarize", { 
+          input_text: textInput, 
+          file_obj: fileInput, 
+          sentences: Number(summaryLength), 
+        })) as any;
+
+        if (result.data && result.data[0]) {
+          setSummary(String(result.data[0]));
+          setParaphrasedText(""); // Bersihkan hasil parafrasa
+        }
+
+      // Logika untuk fitur Paraphraser
+      } else if (activeFeature === 'paraphraser') {
+          if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diparafrasakan.");
+          
+          const result = (await client.predict("/paraphrase", { 
+            input_text: originalText, 
+            file_obj: null, 
+          })) as any;
+
+          if (result.data && result.data[0]) {
+            setParaphrasedText(String(result.data[0]));
+            setSummary(""); // Bersihkan hasil ringkasan
+          }
+      }
+      console.log("Proses selesai!");
+    } catch (err: any) {
+      console.error("Detail Error:", err);
+      setError(err.message || "Terjadi kesalahan koneksi ke server AI.");
+      setSummary("");
+      setParaphrasedText("");
+    } finally {
+      setIsLoading(false);
     }
-  } else if (activeFeature === 'paraphraser') {
-    const result = (await client.predict("/paraphrase", { 
-      input_text: originalText, 
-      file_obj: null, 
-    })) as any;
-
-    if (result.data && result.data[0]) {
-      setParaphrasedText(String(result.data[0]));
-    }
-  }
-} catch (err: any) {
-  // Biar error detail kelihatan di layar
-  setError(err.message || "Koneksi ke server AI gagal.");
-}
   };
 
   // Fungsi untuk merender bagian input form secara dinamis
