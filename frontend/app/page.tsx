@@ -60,52 +60,41 @@ export default function Home() {
     setError("");
     setCopySuccess('');
 
-    try {
-      const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
-      if (!hfSpace) throw new Error("Environment Variable belum dipasang di Vercel.");
+    // Di dalam handleSubmit (page.tsx)
+try {
+  const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
+  if (!hfSpace) throw new Error("Konfigurasi backend belum dipasang di Vercel.");
+  
+  const client = await Client.connect(hfSpace);
 
-      const client = await Client.connect(hfSpace);
+  if (activeFeature === 'summarizer') {
+    // Pastikan mengirim file asli, bukan sekadar path string
+    const fileInput = summarizerMode === 'file' ? file : null;
+    const textInput = summarizerMode === 'text' ? originalText : "";
 
-      if (activeFeature === 'summarizer') {
-        const textInput = summarizerMode === 'text' ? originalText : "";
-        // Gradio seringkali membutuhkan file dalam bentuk Blob atau File object langsung
-        const fileInput = summarizerMode === 'file' ? file : null;
+    const result = (await client.predict("/summarize", { 
+      input_text: textInput, 
+      file_obj: fileInput, 
+      sentences: Number(summaryLength), 
+    })) as any;
 
-        if (summarizerMode === 'file' && !file) throw new Error("Silakan unggah file dahulu.");
-        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Teks kosong.");
-
-        // Tambahkan casting 'as any' agar TypeScript tidak komplain soal .data
-        const result = (await client.predict("/summarize", { 
-          input_text: textInput, 
-          file_obj: fileInput, 
-          sentences: Number(summaryLength), 
-        })) as any;
-
-        if (result.data && result.data[0]) {
-          setSummary(String(result.data[0]));
-        }
-        setParaphrasedText("");
-
-      } else if (activeFeature === 'paraphraser') {
-        if (!originalText.trim()) throw new Error("Teks kosong.");
-
-        const result = (await client.predict("/paraphrase", { 
-          input_text: originalText, 
-          file_obj: null, 
-        })) as any;
-
-        if (result.data && result.data[0]) {
-          setParaphrasedText(String(result.data[0]));
-        }
-        setSummary("");
-      }
-    } catch (err: any) {
-      console.error("Connection Error:", err);
-      // Menampilkan pesan error dari backend jika ada
-      setError(err.message || "Gagal memproses dokumen.");
-    } finally {
-      setIsLoading(false);
+    if (result.data && result.data[0]) {
+      setSummary(String(result.data[0]));
     }
+  } else if (activeFeature === 'paraphraser') {
+    const result = (await client.predict("/paraphrase", { 
+      input_text: originalText, 
+      file_obj: null, 
+    })) as any;
+
+    if (result.data && result.data[0]) {
+      setParaphrasedText(String(result.data[0]));
+    }
+  }
+} catch (err: any) {
+  // Biar error detail kelihatan di layar
+  setError(err.message || "Koneksi ke server AI gagal.");
+}
   };
 
   // Fungsi untuk merender bagian input form secara dinamis
