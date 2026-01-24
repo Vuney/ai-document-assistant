@@ -104,13 +104,13 @@ export default function Home() {
       }
       console.log("Proses selesai!");
     } catch (err: any) {
-      console.error("Detail Error:", err);
-      setError(err.message || "Terjadi kesalahan koneksi ke server AI.");
-      setSummary("");
-      setParaphrasedText("");
-    } finally {
-      setIsLoading(false);
-    }
+  console.error("Detail Error Lengkap:", err);
+  // Mengambil pesan error asli dari Hugging Face jika ada
+  const errorMessage = err.message || JSON.stringify(err) || "Gagal terhubung ke AI.";
+  setError(errorMessage); 
+} finally {
+  setIsLoading(false);
+}
   };
 
   // Fungsi untuk merender bagian input form secara dinamis
