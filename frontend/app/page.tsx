@@ -62,20 +62,23 @@ export default function Home() {
 
     try {
       const hfSpace = process.env.NEXT_PUBLIC_HF_SPACE; 
-      if (!hfSpace) throw new Error("Konfigurasi backend (Environment Variable) belum dipasang di Vercel.");
+      if (!hfSpace) throw new Error("Konfigurasi backend belum terpasang di Vercel.");
       
       console.log("Menghubungkan ke Hugging Face...");
-      // Menghubungkan ke Gradio Client
       const client = await Client.connect(hfSpace);
       console.log("Koneksi berhasil, mengirim data...");
 
-      // Logika untuk fitur Summarizer
       if (activeFeature === 'summarizer') {
         const textInput = summarizerMode === 'text' ? originalText : "";
-        const fileInput = summarizerMode === 'file' ? file : null;
+        
+        // Logika pengiriman file yang kamu tanyakan
+        let fileInput = null;
+        if (summarizerMode === 'file' && file) {
+            fileInput = file; // Mengirim objek file asli
+        }
 
-        if (summarizerMode === 'file' && !file) throw new Error("Silakan unggah file terlebih dahulu.");
-        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diringkas.");
+        if (summarizerMode === 'file' && !file) throw new Error("Silakan pilih file terlebih dahulu.");
+        if (summarizerMode === 'text' && !originalText.trim()) throw new Error("Teks tidak boleh kosong.");
 
         const result = (await client.predict("/summarize", { 
           input_text: textInput, 
@@ -85,32 +88,31 @@ export default function Home() {
 
         if (result.data && result.data[0]) {
           setSummary(String(result.data[0]));
-          setParaphrasedText(""); // Bersihkan hasil parafrasa
+          setParaphrasedText("");
         }
 
-      // Logika untuk fitur Paraphraser
       } else if (activeFeature === 'paraphraser') {
-          if (!originalText.trim()) throw new Error("Silakan masukkan teks yang ingin diparafrasakan.");
-          
-          const result = (await client.predict("/paraphrase", { 
-            input_text: originalText, 
-            file_obj: null, 
-          })) as any;
+        if (!originalText.trim()) throw new Error("Teks tidak boleh kosong.");
 
-          if (result.data && result.data[0]) {
-            setParaphrasedText(String(result.data[0]));
-            setSummary(""); // Bersihkan hasil ringkasan
-          }
+        const result = (await client.predict("/paraphrase", { 
+          input_text: originalText, 
+          file_obj: null, 
+        })) as any;
+
+        if (result.data && result.data[0]) {
+          setParaphrasedText(String(result.data[0]));
+          setSummary("");
+        }
       }
-      console.log("Proses selesai!");
+      console.log("Proses Selesai!");
     } catch (err: any) {
-  console.error("Detail Error Lengkap:", err);
-  // Mengambil pesan error asli dari Hugging Face jika ada
-  const errorMessage = err.message || JSON.stringify(err) || "Gagal terhubung ke AI.";
-  setError(errorMessage); 
-} finally {
-  setIsLoading(false);
-}
+      console.error("Detail Error:", err);
+      // Menampilkan pesan error asli agar mudah dilacak
+      const msg = err.message || JSON.stringify(err);
+      setError(msg.includes("Object") ? "Terjadi kesalahan pada format file." : msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Fungsi untuk merender bagian input form secara dinamis
