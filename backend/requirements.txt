@@ -4,3 +4,4 @@ sumy
 PyPDF2
 python-docx
 numpy
+lxml_html_clean
